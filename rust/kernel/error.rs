@@ -103,13 +103,13 @@ impl From<AllocError> for Error {
     }
 }
 
-/// Convert a kernel pointer to [`KernelResult`]
+/// Converts a kernel pointer to [`KernelResult`].
 ///
 /// # Pointer value range
 ///
-/// (According to include/linux/err.h)
+/// According to `include/linux/err.h`,
 /// [0, .., `core::usize::MAX - bindings::MAX_ERRNO`) is the range for normal values of pointer,
-/// [`core::unsize::MAX - bindings::MAX_ERRNO`,..,`core::usize::MAX] is the range for error value
+/// [`core::unsize::MAX - bindings::MAX_ERRNO`,..,`core::usize::MAX] is the range for error values
 /// stored in pointer.
 pub fn ptr_to_result<T>(ptr: *mut T) -> Result<*mut T, Error> {
     let value = ptr as usize;

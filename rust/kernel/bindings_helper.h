@@ -10,6 +10,8 @@
 #include <linux/version.h>
 #include <linux/miscdevice.h>
 #include <linux/poll.h>
+#include <linux/kthread.h>
+#include <linux/err.h>
 
 // `bindgen` gets confused at certain things
 const gfp_t BINDINGS_GFP_KERNEL = GFP_KERNEL;

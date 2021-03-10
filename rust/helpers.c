@@ -4,6 +4,7 @@
 #include <linux/build_bug.h>
 #include <linux/uaccess.h>
 #include <linux/sched/signal.h>
+#include <linux/sched/task.h>
 
 void rust_helper_BUG(void)
 {
@@ -59,6 +60,18 @@ int rust_helper_signal_pending(void)
 	return signal_pending(current);
 }
 EXPORT_SYMBOL(rust_helper_signal_pending);
+
+void rust_helper_get_task_struct(struct task_struct *task)
+{
+	(void)get_task_struct(task);
+}
+EXPORT_SYMBOL(rust_helper_get_task_struct);
+
+void rust_helper_put_task_struct(struct task_struct *task)
+{
+	put_task_struct(task);
+}
+EXPORT_SYMBOL(rust_helper_put_task_struct);
 
 // See https://github.com/rust-lang/rust-bindgen/issues/1671
 static_assert(__builtin_types_compatible_p(size_t, uintptr_t),

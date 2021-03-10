@@ -7,13 +7,16 @@
 #![feature(test)]
 
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use core::pin::Pin;
+use core::sync::atomic::{AtomicBool, Ordering};
 use kernel::prelude::*;
 use kernel::{
     chrdev, condvar_init, cstr,
     file_operations::FileOperations,
     miscdev, mutex_init, spinlock_init,
     sync::{CondVar, Mutex, SpinLock},
+    thread::{schedule, Thread},
 };
 
 module! {
@@ -131,6 +134,53 @@ impl KernelModule for RustExample {
             cv.notify_one();
             cv.notify_all();
             cv.free_waiters();
+        }
+
+        // Test threads.
+        {
+            let mut a = 1;
+            // FIXME: use a completion or a barrier.
+            let flag = Arc::try_new(AtomicBool::new(false))?;
+            let other = flag.clone();
+
+            let t1 = Thread::try_new(cstr!("rust-thread"), move || {
+                other.store(true, Ordering::Release);
+                let b = Box::try_new(42)?;
+                for _ in 0..20 {
+                    a += 1;
+                    println!("Hello Rust Thread {}", a + b.as_ref());
+                }
+
+                Ok(())
+            })?;
+
+            t1.wake_up();
+
+            // Waits to observe the thread run.
+            while !flag.load(Ordering::Acquire) {
+                schedule();
+            }
+
+            // `t1` should exit normally.
+            t1.stop().expect("Rust thread should exit normally");
+        }
+
+        // Test threads (not up for running).
+        {
+            let mut a = 1;
+
+            let t1 = Thread::try_new(cstr!("rust-thread"), move || {
+                let b = Box::try_new(42)?;
+                for _ in 0..20 {
+                    a += 1;
+                    println!("Hello Rust Thread {}", a + b.as_ref());
+                }
+
+                Ok(())
+            })?;
+
+            // Without `wake_up`, `stop` will cause the thread to exits with `-EINTR`.
+            t1.stop().expect_err("Rust thread should exit abnormally");
         }
 
         // Including this large variable on the stack will trigger
