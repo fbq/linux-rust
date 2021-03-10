@@ -69,6 +69,7 @@ pub mod print;
 pub mod random;
 mod static_assert;
 pub mod sync;
+pub mod thread;
 
 #[cfg(any(CONFIG_SYSCTL, doc))]
 #[doc(cfg(CONFIG_SYSCTL))]

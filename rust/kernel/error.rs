@@ -490,8 +490,6 @@ macro_rules! from_kernel_result {
 ///     }
 /// }
 /// ```
-// TODO: remove `dead_code` marker once an in-kernel client is available.
-#[allow(dead_code)]
 pub(crate) fn from_kernel_err_ptr<T>(ptr: *mut T) -> Result<*mut T> {
     // CAST: casting a pointer to `*const c_types::c_void` is always valid.
     let const_ptr: *const c_types::c_void = ptr.cast();
