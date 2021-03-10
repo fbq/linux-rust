@@ -4,6 +4,7 @@
 #include <linux/build_bug.h>
 #include <linux/uaccess.h>
 #include <linux/sched/signal.h>
+#include <linux/sched/task.h>
 #include <linux/gfp.h>
 #include <linux/highmem.h>
 #include <linux/uio.h>
