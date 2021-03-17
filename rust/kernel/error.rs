@@ -102,3 +102,21 @@ impl From<AllocError> for Error {
         Error::ENOMEM
     }
 }
+
+/// Convert a kernel pointer to [`KernelResult`]
+///
+/// # Pointer value range
+///
+/// (According to include/linux/err.h)
+/// [0, .., `core::usize::MAX - bindings::MAX_ERRNO`) is the range for normal values of pointer,
+/// [`core::unsize::MAX - bindings::MAX_ERRNO`,..,`core::usize::MAX] is the range for error value
+/// stored in pointer.
+pub fn ptr_to_result<T>(ptr: *mut T) -> Result<*mut T, Error> {
+    let value = ptr as usize;
+
+    if value >= core::usize::MAX - bindings::MAX_ERRNO as usize {
+        Err(Error::from_kernel_errno(value as c_types::c_int))
+    } else {
+        Ok(ptr)
+    }
+}
