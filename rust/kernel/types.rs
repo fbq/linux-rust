@@ -68,6 +68,9 @@ impl Deref for CStr<'_> {
 macro_rules! cstr {
     ($str:expr) => {{
         let s = concat!($str, "\x00");
-        unsafe { $crate::CStr::new_unchecked(s) }
+        #[allow(unused_unsafe)] // This macro may be used in `unsafe`.
+        unsafe {
+            $crate::CStr::new_unchecked(s)
+        }
     }};
 }
