@@ -18,6 +18,114 @@ extern "C" {
     fn rust_helper_put_task_struct(task: *mut bindings::task_struct);
 }
 
+fn call_as_closure(closure: Box<Box<dyn FnOnce() -> KernelResult<()>>>) -> KernelResult<()> {
+    closure()
+}
+
+/// Generates a bridge function from Rust to C ABI.
+///
+/// `func` should be a `fn(arg: arg_type) -> KernelResult<()>` where arg_type
+/// is the same size as `*mut c_types::c_void` ([`core::intrinsics::transmute`]
+/// checks that at the compile time.
+#[macro_export]
+macro_rules! bridge {
+    ($func:expr) => {{
+        unsafe extern "C" fn _func(data: *mut $crate::c_types::c_void) -> $crate::c_types::c_int {
+            let arg = core::intrinsics::transmute(data);
+            let f: fn(_) -> _ = $func; // Makes sure `$func` is a function pointer
+
+            match f(arg) {
+                Ok(()) => 0,
+                Err(e) => e.to_kernel_errno(),
+            }
+        }
+
+        _func
+    }};
+}
+
+/// Creates a new thread without extra memory allocation.
+///
+/// This macro tasks a Rust function pointer `$func` and an argument `$arg`,
+/// and creates a thread doing `$func($arg)`, the return value of $func is
+/// [`KernelError<()>`].
+///
+/// # Examples
+///
+/// ```
+/// use kernel::thread::{schedule, Thread};
+/// use kernel::thread_try_new;
+/// use alloc::sync::Arc;
+/// use core::sync::atomic::{AtomicUsize, Ordering};
+///
+/// let arc = Arc::try_new(AtomicUsize::new(0))?;
+///
+/// let t = thread_try_new!(
+///   cstr!("rust-thread"),
+///   |x: Arc<AtomicUsize>| -> KernelResult<()> {
+///     for _ in 0..10 {
+///         x.fetch_add(1, Ordering::Release);
+///         println!("x is {}", x.load(Ordering::Relaxed));
+///     }
+///     Ok(())
+///   },
+///   arc.clone()
+/// )?;
+///
+/// t.wake_up();
+///
+/// while arc.load(Ordering::Acquire) != 10 {
+///     schedule();
+/// }
+///
+/// println!("main thread: x is {}", arc.load(Ordering::Relaxed));
+/// ```
+///
+/// # Context
+///
+/// This macro might sleep due to the memory allocation and waiting for
+/// the completion in `kthread_create_on_node`. Therefore do not call this
+/// in atomic contexts (i.e. preemption-off contexts).
+#[macro_export]
+macro_rules! thread_try_new {
+    ($name:expr, $func:expr, $arg:expr) => {{
+        // In case of failure, we need to `transmute` the `$arg` back, `_arg` is
+        // used here to inference the type of `$arg`, so that the `transmute`
+        // in the failure path knows the type.
+        let mut _arg = $arg;
+
+        // TYPE CHECK: `$arg` should be the same as `*mut c_void`, and
+        // `transmute` only works if two types are of the same size.
+        //
+        // SAFETY: In the bridge funciton, the `$arg` is `transmute` back.
+        let data = unsafe { core::intrinsics::transmute(_arg) };
+
+        // SAFTEY: a) the bridge function is a valid function pointer, and b)
+        // the bridge function `transmute` back what we just `transmute`.
+        let result =
+            unsafe { $crate::thread::Thread::try_new_c_style($name, $crate::bridge!($func), data) };
+
+        if let Err(e) = result {
+            // Creation fails, we need to `transmute` back the `$arg` because
+            // there is no new thread to own it, we should let the current
+            // thread own it.
+            //
+            // SAFETY: We `transmute` back waht we just `transmute`, and since
+            // the new thread is not created, so no one touches `data`.
+            unsafe {
+                _arg = core::intrinsics::transmute(data);
+            }
+
+            // Uses an unused closure to check whether `$arg` is `Send`.
+            let _ = move || { _arg };
+
+            Err(e)
+        } else {
+            result
+        }
+    }};
+}
+
 /// Function passed to `kthread_create_on_node` as the thread function pointer.
 #[no_mangle]
 unsafe extern "C" fn rust_thread_func(data: *mut c_types::c_void) -> c_types::c_int {
@@ -103,6 +211,7 @@ impl Thread {
     /// let mut a = 1;
     ///
     /// let t = Thread::try_new(
+    ///   cstr!("rust-thread"),
     ///   move || {
     ///     let b = Box::try_new(42)?;
     ///
@@ -111,8 +220,7 @@ impl Thread {
     ///         println!("Hello Rust Thread {}", a + b.as_ref());
     ///     }
     ///     Ok(())
-    ///   },
-    ///   cstr!("rust-thread")
+    ///   }
     /// )?;
     ///
     /// t.wake_up();
@@ -132,33 +240,11 @@ impl Thread {
         // `rust_thread_func` (the function that uses the closure) get executed.
         let boxed_fn: Box<dyn FnOnce() -> KernelResult<()> + 'static> = Box::try_new(f)?;
 
-        // Double boxing here because `dyn FnOnce` is a fat pointer, and we can only
-        // pass a `usize` as the `data` for `kthread_create_on_node`.
-        //
-        // We `Box::into_raw` from this side, and will `Box::from_raw` at the other
-        // side to transfer the ownership of the boxed data.
-        let double_box_ptr = Box::into_raw(Box::try_new(boxed_fn)?) as *mut _;
+        // Double boxing here because `dyn FnOnce` is a fat pointer, and we cannot
+        // `transmute` it to `*mut c_void`.
+        let double_box = Box::try_new(boxed_fn)?;
 
-        // SAFETY: a) `double_box_ptr` is a proper pointer (generated by `Box::into_raw`),
-        // and if succeed, the new thread will get the ownership. And b) `rust_thread_func`
-        // is provided by us and correctly handles the dereference of the `double_box_ptr`
-        // (via `Box::from_raw`).
-        let result = unsafe { Self::try_new_c_style(name, rust_thread_func, double_box_ptr) };
-
-        if let Err(e) = result {
-            // Creation fails, we need to get back the double boxed closure.
-            //
-            // SAFETY: `double_box_ptr` is a proper pointer generated by a `Box::into_raw()`
-            // from a box created by us. If the thread creation fails, no one will reference
-            // that pointer.
-            unsafe {
-                Box::from_raw(double_box_ptr);
-            }
-
-            Err(e)
-        } else {
-            result
-        }
+        thread_try_new!(name, call_as_closure, double_box)
     }
 
     /// Wakes up the thread.

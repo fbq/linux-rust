@@ -9,7 +9,7 @@
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::pin::Pin;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use kernel::prelude::*;
 use kernel::{
     chrdev, condvar_init, cstr,
@@ -17,6 +17,7 @@ use kernel::{
     miscdev, mutex_init, spinlock_init,
     sync::{CondVar, Mutex, SpinLock},
     thread::{schedule, Thread},
+    thread_try_new,
 };
 
 module! {
@@ -181,6 +182,35 @@ impl KernelModule for RustExample {
 
             // Without `wake_up`, `stop` will cause the thread to exits with `-EINTR`.
             t1.stop().expect_err("Rust thread should exit abnormally");
+        }
+
+        // Test threads
+        {
+            let arc = Arc::try_new(AtomicUsize::new(0))?;
+
+            let t1 = thread_try_new!(
+                cstr!("rust-thread"),
+                |x: Arc<AtomicUsize>| -> KernelResult<()> {
+                    for _ in 0..10 {
+                        x.fetch_add(1, Ordering::Release);
+                        println!("x is {}", x.load(Ordering::Relaxed));
+                    }
+                    Ok(())
+                },
+                arc.clone()
+            )?;
+
+            t1.wake_up();
+
+            // Waits to observe the thread run.
+            while arc.load(Ordering::Acquire) != 10 {
+                schedule();
+            }
+
+            println!("main thread: x is {}", arc.load(Ordering::Relaxed));
+
+            // `t1` should exit normally.
+            t1.stop().expect("Rust thread should exit abnormally");
         }
 
         // Including this large variable on the stack will trigger
