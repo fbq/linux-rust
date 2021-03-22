@@ -8,6 +8,7 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use core::fmt::Debug;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use kernel::prelude::*;
@@ -16,7 +17,7 @@ use kernel::{
     file_operations::FileOperations,
     miscdev, mutex_init, spinlock_init,
     sync::{CondVar, Mutex, SpinLock},
-    thread::{schedule, Thread},
+    thread::{schedule, BoxArg, PrimitiveArg, Thread, ThreadFunc},
     thread_try_new,
 };
 
@@ -211,6 +212,49 @@ impl KernelModule for RustExample {
 
             // `t1` should exit normally.
             t1.stop().expect("Rust thread should exit abnormally");
+        }
+
+        // Test threads (create with ThreadFunc and BoxArg).
+        {
+            let b = Box::try_new(42)?;
+
+            struct SimpleBoxFunc;
+
+            impl<T> ThreadFunc<Box<T>> for SimpleBoxFunc
+            where
+                T: Debug + Send,
+            {
+                type Arg = BoxArg;
+                fn func(arg: Box<T>) -> KernelResult<()> {
+                    println!("I got {:?}", arg);
+                    Ok(())
+                }
+            }
+
+            let t1 = Thread::try_new_thread_func::<_, SimpleBoxFunc>(cstr!("rust-thread"), b)?;
+
+            t1.wake_up();
+
+            // Don't care the result value.
+        }
+
+        // Test threads (create with ThreadFunc and PrimitiveArg).
+        {
+            struct I32Func;
+
+            impl ThreadFunc<i32> for I32Func {
+                type Arg = PrimitiveArg;
+                fn func(arg: i32) -> KernelResult<()> {
+                    println!("I got i32 {}", arg);
+                    Ok(())
+                }
+            }
+
+            let t1 = Thread::try_new_thread_func::<_, I32Func>(cstr!("rust-thread"), 43)?;
+
+            t1.wake_up();
+
+            // Don't care the result value.
         }
 
         // Including this large variable on the stack will trigger

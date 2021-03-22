@@ -18,10 +18,6 @@ extern "C" {
     fn rust_helper_put_task_struct(task: *mut bindings::task_struct);
 }
 
-fn call_as_closure(closure: Box<Box<dyn FnOnce() -> KernelResult<()>>>) -> KernelResult<()> {
-    closure()
-}
-
 /// Generates a bridge function from Rust to C ABI.
 ///
 /// `func` should be a `fn(arg: arg_type) -> KernelResult<()>` where arg_type
@@ -117,7 +113,7 @@ macro_rules! thread_try_new {
             }
 
             // Uses an unused closure to check whether `$arg` is `Send`.
-            let _ = move || { _arg };
+            let _ = move || _arg;
 
             Err(e)
         } else {
@@ -126,26 +122,122 @@ macro_rules! thread_try_new {
     }};
 }
 
-/*
+/// Helper trait for thread arguments handling.
+///
+/// Basically, we just handle object "sending" manually, for a [`Send`] object,
+/// [`ThreadArg::from_arg`] is used to convert it into a pointer that kernel's
+/// thread creation function will accept (e.g. `kthread_create_on_node`). And
+/// later in the thread function, [`ThreadArg::from_raw`] is used to convert it
+/// back.
+///
+/// # Safety
+///
+/// Both [`ThreadArg::from_arg`] and [`ThreadArg::from_raw`] are marked as
+/// `unsafe` because they are only allowed to use in pair.
 pub trait ThreadArg<A: Send> {
-    fn from_raw(ptr: *mut c_types::c_void) -> A;
-    fn into_raw(arg: A) -> *mut c_types::c_void;
+    /// Converts a raw pointer to a thread argument.
+    ///
+    /// # Safety
+    ///
+    /// This function is marked as unsafe because a) the caller need to make
+    /// sure `ptr` is a valid pointer and b) it should be used in pair with
+    /// ['ThreadArg::from_arg`].
+    unsafe fn from_raw(ptr: *mut c_types::c_void) -> A;
+
+    /// Converts a thread argument to a raw poitner.
+    ///
+    /// # Safety
+    ///
+    /// This function is marked as unsafe because it should be used in pair with
+    /// ['ThreadArg::into_raw`], otherwise memory leak or other UBs may happen.
+    unsafe fn from_arg(arg: A) -> *mut c_types::c_void;
 }
+
+/// Helper trait for generate a C ABI bridge function.
+///
+/// Pass an `impl` of this trait as the second type parameter to
+/// [`Thread::try_new_thread_func`], the new thread call [`ThreadFunc::func`]
+/// if the creation succeeds.
 pub trait ThreadFunc<A: Send> {
+    type Arg: ThreadArg<A>;
     fn func(arg: A) -> KernelResult<()>;
 }
 
-extern "C" fn bridge<A, T: ThreadFunc<A>>(data: *mut c_types::c_void) -> i32
-where A : Send
+/// Predefined argument handling structs.
+///
+/// FIXME: Maybe put them into a sub mod?
+
+
+/// Helper struct for Box<A: Send> thread argument handling.
+///
+/// A helper [`ThreadFunc`] whose `func` is: `fn(Box<A>) -> KernelResult<()>`,
+/// can use it as the [`ThreadFunc::Arg`] type.
+pub struct BoxArg;
+
+impl<T> ThreadArg<Box<T>> for BoxArg
+where
+    T: Send,
 {
-    let arg = unsafe { core::intrinsics::transmute(data) };
-    
-    match T::func(arg) {
+    unsafe fn from_raw(ptr: *mut c_types::c_void) -> Box<T> {
+        Box::from_raw(ptr as *mut T)
+    }
+    unsafe fn from_arg(arg: Box<T>) -> *mut c_types::c_void {
+        Box::into_raw(arg) as *mut _
+    }
+}
+
+pub struct PrimitiveArg;
+
+macro_rules! primitive_arg_struct {
+    ($t:ty) => {
+        impl ThreadArg<$t> for PrimitiveArg {
+            unsafe fn from_raw(ptr: *mut c_types::c_void) -> $t {
+                ptr as usize as $t
+            }
+            unsafe fn from_arg(arg: $t) -> *mut c_types::c_void {
+                arg as usize as *mut _
+            }
+        }
+    };
+}
+primitive_arg_struct! {i8}
+primitive_arg_struct! {i16}
+primitive_arg_struct! {i32}
+primitive_arg_struct! {i64}
+primitive_arg_struct! {isize}
+primitive_arg_struct! {u8}
+primitive_arg_struct! {u16}
+primitive_arg_struct! {u32}
+primitive_arg_struct! {u64}
+primitive_arg_struct! {usize}
+
+/// Bridge function from Rust ABI to C.
+extern "C" fn bridge<A, F: ThreadFunc<A>>(data: *mut c_types::c_void) -> i32
+where
+    A: Send,
+{
+    let arg = unsafe { F::Arg::from_raw(data) };
+
+    match F::func(arg) {
         Ok(_) => 0,
         Err(e) => e.to_kernel_errno(),
     }
 }
-*/
+
+/// Helper struct for thread that just call its argument as a closure.
+///
+/// We use double boxing in the implementation, because 1) we need to make sure
+/// the thread argument live longer enough for the new thread to use (box #1),
+/// and `FnOnce()` is a fat pointer that doesn't fit in `*mut c_void` (box #2).
+struct ClosureCallFunc;
+
+impl ThreadFunc<Box<Box<dyn FnOnce() -> KernelResult<()> + Send>>> for ClosureCallFunc {
+    type Arg = BoxArg;
+    fn func(arg: Box<Box<dyn FnOnce() -> KernelResult<()> + Send>>) -> KernelResult<()> {
+        // Just calls it.
+        arg()
+    }
+}
 
 /// Function passed to `kthread_create_on_node` as the thread function pointer.
 #[no_mangle]
@@ -221,32 +313,69 @@ impl Thread {
         Ok(Thread { task })
     }
 
-    /*
-    pub fn try_new_thread_func<A, T: ThreadFunc<A>>(name: CStr, arg: A) -> KernelResult<Self>
-    where A: Send
+    /// Creates a new thread without extra dynamic memory allocaiton
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use kernel::thread::{Thread, ThreadFunc, BoxArg};
+    /// use alloc::boxed::Box;
+    /// use core::fmt::Debug;
+    ///
+    /// struct SimpleBoxFunc;
+    ///
+    /// impl<T> ThreadFunc<Box<T>> for SimpleBoxFunc
+    /// where T: Send + Debug
+    /// {
+    ///     type Arg = BoxArg;
+    ///     fn func(b: Box<T>) -> KernelResult<()> {
+    ///         println!("I got {:?}", b);
+    ///     }
+    /// }
+    ///
+    /// let t = Thread::try_new_thread_func::<_, SimpleBoxFunc>(
+    ///   cstr!("rust-thread"),
+    ///   Box::try_new(42)?
+    /// )?;
+    ///
+    /// t.wake_up();
+    /// ```
+    ///
+    /// # Context
+    ///
+    /// This function might sleep due to the memory allocation and waiting for
+    /// the completion in `kthread_create_on_node`. Therefore do not call this
+    /// in atomic contexts (i.e. preemption-off contexts).
+    pub fn try_new_thread_func<A, F: ThreadFunc<A>>(name: CStr, arg: A) -> KernelResult<Self>
+    where
+        A: Send,
     {
-        let data = unsafe { core::intrinsics::transmute(arg) };
+        // SAFETY: We don't dereference the pointer we get from `from_arg`, and
+        // we will consume the pointer with 'from_raw` either in the new thread
+        // or the error handling below.
+        let data = unsafe { F::Arg::from_arg(arg) };
 
-        let result = unsafe { Self::try_new_c_style(name, bridge::<A,T>, data) };
+        // SAFETY: `bridge::<A,F>` is a proper function pointer to a C
+        // function, and [`ThreadArg::from_raw`] will be used in it to consume
+        // the raw pointer in the new thread.
+        let result = unsafe { Self::try_new_c_style(name, bridge::<A, F>, data) };
 
         if let Err(e) = result {
-            // Creation fails, we need to `transmute` back the `arg` because
-            // there is no new thread to own it, we should let the current
-            // thread own it.
+            // Creation fails, we need to consume the raw pointer `data` because
+            // there is no new thread to own the underlying object, we should
+            // let the current thread own it.
             //
-            // SAFETY: We `transmute` back waht we just `transmute`, and since
+            // SAFETY: We `from_raw` back what we just `from_arg`, and since
             // the new thread is not created, so no one touches `data`.
             unsafe {
-                core::intrinsics::transmute::<_, A>(data);
+                F::Arg::from_raw(data);
             }
 
             Err(e)
         } else {
             result
         }
-
     }
-    */
 
     /// Creates a new thread.
     ///
@@ -286,13 +415,13 @@ impl Thread {
     {
         // Allocate closure here, because this function maybe returns before
         // `rust_thread_func` (the function that uses the closure) get executed.
-        let boxed_fn: Box<dyn FnOnce() -> KernelResult<()> + 'static> = Box::try_new(f)?;
+        let boxed_fn: Box<dyn FnOnce() -> KernelResult<()> + 'static + Send> = Box::try_new(f)?;
 
         // Double boxing here because `dyn FnOnce` is a fat pointer, and we cannot
         // `transmute` it to `*mut c_void`.
         let double_box = Box::try_new(boxed_fn)?;
 
-        thread_try_new!(name, call_as_closure, double_box)
+        Self::try_new_thread_func::<_, ClosureCallFunc>(name, double_box)
     }
 
     /// Wakes up the thread.
