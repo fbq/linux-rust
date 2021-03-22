@@ -126,6 +126,27 @@ macro_rules! thread_try_new {
     }};
 }
 
+/*
+pub trait ThreadArg<A: Send> {
+    fn from_raw(ptr: *mut c_types::c_void) -> A;
+    fn into_raw(arg: A) -> *mut c_types::c_void;
+}
+pub trait ThreadFunc<A: Send> {
+    fn func(arg: A) -> KernelResult<()>;
+}
+
+extern "C" fn bridge<A, T: ThreadFunc<A>>(data: *mut c_types::c_void) -> i32
+where A : Send
+{
+    let arg = unsafe { core::intrinsics::transmute(data) };
+    
+    match T::func(arg) {
+        Ok(_) => 0,
+        Err(e) => e.to_kernel_errno(),
+    }
+}
+*/
+
 /// Function passed to `kthread_create_on_node` as the thread function pointer.
 #[no_mangle]
 unsafe extern "C" fn rust_thread_func(data: *mut c_types::c_void) -> c_types::c_int {
@@ -199,6 +220,33 @@ impl Thread {
 
         Ok(Thread { task })
     }
+
+    /*
+    pub fn try_new_thread_func<A, T: ThreadFunc<A>>(name: CStr, arg: A) -> KernelResult<Self>
+    where A: Send
+    {
+        let data = unsafe { core::intrinsics::transmute(arg) };
+
+        let result = unsafe { Self::try_new_c_style(name, bridge::<A,T>, data) };
+
+        if let Err(e) = result {
+            // Creation fails, we need to `transmute` back the `arg` because
+            // there is no new thread to own it, we should let the current
+            // thread own it.
+            //
+            // SAFETY: We `transmute` back waht we just `transmute`, and since
+            // the new thread is not created, so no one touches `data`.
+            unsafe {
+                core::intrinsics::transmute::<_, A>(data);
+            }
+
+            Err(e)
+        } else {
+            result
+        }
+
+    }
+    */
 
     /// Creates a new thread.
     ///
