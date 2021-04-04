@@ -60,6 +60,16 @@ config SAMPLE_RUST_THREAD
 
 	  If unsure, say N.
 
+config SAMPLE_RUST_CPU
+	tristate "CPU-related operations"
+	help
+	  This option builds the Rust CPU-related operations sample.
+
+	  To compile this as a module, choose M here:
+	  the module will be called rust_cpu.
+
+	  If unsure, say N.
+
 config SAMPLE_RUST_CHRDEV
 	tristate "Character device"
 	help

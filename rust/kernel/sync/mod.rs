@@ -33,7 +33,7 @@ mod spinlock;
 
 pub use arc::{Ref, RefBorrow};
 pub use condvar::CondVar;
-pub use guard::{Guard, Lock};
+pub use guard::{Guard, Lock, ReadGuard, ReadLock};
 pub use locked_by::LockedBy;
 pub use mutex::Mutex;
 pub use spinlock::SpinLock;
