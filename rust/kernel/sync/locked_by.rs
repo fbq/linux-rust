@@ -69,7 +69,7 @@ impl<T, L: Lock + ?Sized> LockedBy<T, L> {
     /// because in any case at most one thread (or CPU) can access the protected data at a time.
     pub fn new(owner: &L, data: T) -> Self {
         Self {
-            owner: owner.locked_data().get(),
+            owner: owner.locked_data(),
             data: UnsafeCell::new(data),
         }
     }

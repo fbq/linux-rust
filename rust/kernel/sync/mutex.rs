@@ -95,7 +95,7 @@ impl<T: ?Sized> Lock for Mutex<T> {
         bindings::mutex_unlock(self.mutex.get());
     }
 
-    fn locked_data(&self) -> &UnsafeCell<T> {
-        &self.data
+    fn locked_data(&self) -> *mut T {
+        self.data.get()
     }
 }

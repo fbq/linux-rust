@@ -30,14 +30,14 @@ impl<L: Lock + ?Sized> core::ops::Deref for Guard<'_, L> {
 
     fn deref(&self) -> &Self::Target {
         // SAFETY: The caller owns the lock, so it is safe to deref the protected data.
-        unsafe { &*self.lock.locked_data().get() }
+        unsafe { &*self.lock.locked_data() }
     }
 }
 
 impl<L: Lock + ?Sized> core::ops::DerefMut for Guard<'_, L> {
     fn deref_mut(&mut self) -> &mut L::Inner {
         // SAFETY: The caller owns the lock, so it is safe to deref the protected data.
-        unsafe { &mut *self.lock.locked_data().get() }
+        unsafe { &mut *self.lock.locked_data() }
     }
 }
 
@@ -78,5 +78,5 @@ pub trait Lock {
     unsafe fn unlock(&self);
 
     /// Returns the data protected by the lock.
-    fn locked_data(&self) -> &core::cell::UnsafeCell<Self::Inner>;
+    fn locked_data(&self) -> *mut Self::Inner;
 }

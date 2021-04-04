@@ -102,7 +102,7 @@ impl<T: ?Sized> Lock for SpinLock<T> {
         rust_helper_spin_unlock(self.spin_lock.get());
     }
 
-    fn locked_data(&self) -> &UnsafeCell<T> {
-        &self.data
+    fn locked_data(&self) -> *mut T {
+        self.data.get()
     }
 }
