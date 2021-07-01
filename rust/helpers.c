@@ -35,6 +35,12 @@ refcount_t rust_helper_REFCOUNT_INIT(int n)
 }
 EXPORT_SYMBOL_GPL(rust_helper_REFCOUNT_INIT);
 
+int rust_helper_signal_pending(struct task_struct *t)
+{
+	return signal_pending(t);
+}
+EXPORT_SYMBOL_GPL(rust_helper_signal_pending);
+
 void rust_helper_refcount_inc(refcount_t *r)
 {
 	refcount_inc(r);
@@ -64,6 +70,24 @@ long rust_helper_PTR_ERR(__force const void *ptr)
 	return PTR_ERR(ptr);
 }
 EXPORT_SYMBOL_GPL(rust_helper_PTR_ERR);
+
+struct task_struct *rust_helper_get_current(void)
+{
+	return current;
+}
+EXPORT_SYMBOL_GPL(rust_helper_get_current);
+
+void rust_helper_get_task_struct(struct task_struct * t)
+{
+	get_task_struct(t);
+}
+EXPORT_SYMBOL_GPL(rust_helper_get_task_struct);
+
+void rust_helper_put_task_struct(struct task_struct * t)
+{
+	put_task_struct(t);
+}
+EXPORT_SYMBOL_GPL(rust_helper_put_task_struct);
 
 /*
  * We use `bindgen`'s `--size_t-is-usize` option to bind the C `size_t` type
