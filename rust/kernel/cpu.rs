@@ -88,3 +88,40 @@ pub fn online_cpus<'a>(g: &'a ReadGuard<'_, CPUOnlineReadLock>) -> CPUIterator<'
 
     CPUIterator::new(unsafe { g })
 }
+
+use core::task::{Context, Waker, RawWaker, RawWakerVTable};
+use core::future::Future;
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+use core::pin::Pin;
+use crate::types::PointerWrapper;
+
+fn create_wq_vtable() {
+}
+
+#[repr(C)]
+pub struct FutureWork {
+    work: bindings::work_struct,
+    queue: *mut bindings::workqueue_struct,
+    f: Box<dyn Future<Output=()>>,
+}
+
+/*
+impl bindings::work_struct {
+    pub fn new() -> Self {
+    }
+}
+*/
+
+unsafe extern "C" fn future_work_func(work: *mut bindings::work_struct) {
+    // SAFETY: The caller must ensure `work` is a result of
+    // `Arc<FutureWork>::into_pointer`.
+    let future_work = unsafe { Pin::<Arc::<FutureWork>>::from_pointer(work as _) };
+}
+
+/*
+unsafe fn queue_future_on<F>(cpu: i32, *mut binding::workqueue_struct, f: F)
+where F: Future<Output=()>
+{
+}
+*/
