@@ -865,8 +865,22 @@ static const struct proc_ops kallsyms_proc_ops = {
 	.proc_release	= seq_release_private,
 };
 
+#define DI(name) n##name##name
+#define DDI(name) DI(n##name##name)
+#define DDDI(name) DDI(n##name##name)
+#define DDDDI(name) DDDI(n##name##name)
+#define DDDDDI(name) DDDDI(n##name##name)
+
+/* Generate a symbol whose name length is 511 */
+#define LONGEST_NAME DDDDDI(g1h2i3j4k5l6m7n)
+
+extern int LONGEST_NAME(void) { return 0; }
+
 static int __init kallsyms_init(void)
 {
+	/* Showing that the longest name is supported */
+	BUG_ON(!kallsyms_lookup_name(__stringify(LONGEST_NAME)));
+
 	proc_create("kallsyms", 0444, NULL, &kallsyms_proc_ops);
 	return 0;
 }
