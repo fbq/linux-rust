@@ -278,6 +278,23 @@ void *rust_helper_dev_get_drvdata(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(rust_helper_dev_get_drvdata);
 
+void rust_helper_work_struct_init(struct work_struct *work, const char *name,
+		      struct lock_class_key *key)
+{
+	work->data = (atomic_long_t) WORK_DATA_INIT();
+#ifdef CONFIG_LOCKDEP
+	lockdep_init_map(&work->lockdep_map, name, key, 0);
+#endif
+	INIT_LIST_HEAD(&work->entry);
+}
+EXPORT_SYMBOL_GPL(rust_helper_work_struct_init);
+
+bool rust_helper_work_struct_is_uninit(struct work_struct *work)
+{
+	return atomic_long_read(&work->data) == 0;
+}
+EXPORT_SYMBOL_GPL(rust_helper_work_struct_is_uninit);
+
 /* We use bindgen's --size_t-is-usize option to bind the C size_t type
  * as the Rust usize type, so we can use it in contexts where Rust
  * expects a usize like slice (array) indices. usize is defined to be

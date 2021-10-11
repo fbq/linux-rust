@@ -54,6 +54,7 @@ pub mod power;
 pub mod security;
 pub mod str;
 pub mod task;
+pub mod work;
 
 pub mod linked_list;
 mod raw_list;
