@@ -80,12 +80,88 @@ fn test_example() -> Result<TestSummary> {
     Ok(Pass)
 }
 
+fn test_timer() -> Result<TestSummary> {
+    use kernel::time::{
+        jiffies_later, jiffies_now,
+        timer::{LongTimer, Next, Timer},
+    };
+    use kernel::timer_init;
+
+    use core::sync::atomic::{AtomicBool, Ordering};
+
+    let a = AtomicBool::new(false);
+
+    let mut timer1 = unsafe {
+        Timer::new(|| {
+            pr_info!("Oneshot timer");
+            a.store(true, Ordering::Release);
+            Ok(())
+        })
+    };
+
+    let mut counter = 0;
+    let mut timer2 = unsafe {
+        LongTimer::new(|| {
+            pr_info!("long timer {}", counter);
+            counter += 1;
+            if counter == 10 {
+                Ok(Next::Done)
+            } else {
+                Ok(Next::Again(10))
+            }
+        })
+    };
+
+    let mut heart_beat = 0;
+    let mut timer_ref = Pin::from(Box::try_new(unsafe {
+        LongTimer::new(move || {
+            pr_info!("heart beat {} times", heart_beat);
+            heart_beat += 1;
+            Ok(Next::Again(10))
+        })
+    })?);
+
+    timer_init!(unsafe { Pin::new_unchecked(&mut timer1) }, 0, "Oneshot");
+    timer_init!(unsafe { Pin::new_unchecked(&mut timer2) }, 0, "Long");
+    timer_init!(timer_ref.as_mut(), 0, "Boxed");
+
+    pr_info!("schedule a timer\n");
+    timer1.schedule(jiffies_later(1000));
+    timer2.schedule(jiffies_now());
+    timer_ref.schedule(jiffies_now());
+
+    while !a.load(Ordering::Acquire) {
+        core::hint::spin_loop();
+    }
+
+    Ok(Pass)
+}
+
+fn test_delay() -> Result<TestSummary> {
+    use kernel::kasync::executor::workqueue::Executor;
+    use kernel::spawn_task;
+    use kernel::time::{jiffies_now, timer::Delay};
+    use kernel::workqueue;
+
+    let handle = Executor::try_new(workqueue::system())?;
+    spawn_task!(handle.executor(), async move {
+        pr_info!("Start delay {}\n", jiffies_now());
+        Delay::try_new(1000).unwrap().await;
+        pr_info!("After delay {}\n", jiffies_now());
+    })?;
+
+    handle.detach();
+
+    Ok(Pass)
+}
+
 impl kernel::Module for RustSelftests {
     fn init(_name: &'static CStr, _module: &'static ThisModule) -> Result<Self> {
         pr_info!("Rust self tests (init)\n");
 
         do_tests! {
-            test_example // TODO: Remove when there is at least a real test.
+            test_timer,
+            test_delay
         };
 
         Ok(RustSelftests)
