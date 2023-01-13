@@ -60,6 +60,7 @@ __setup("debug_locks_verbose=", setup_debug_locks_verbose);
 #define LOCKTYPE_RTMUTEX 0x20
 #define LOCKTYPE_LL	0x40
 #define LOCKTYPE_SPECIAL 0x80
+#define LOCKTYPE_SRCU	0x100
 
 static struct ww_acquire_ctx t, t2;
 static struct ww_mutex o, o2, o3;
@@ -98,6 +99,11 @@ static DEFINE_RT_MUTEX(rtmutex_B);
 static DEFINE_RT_MUTEX(rtmutex_C);
 static DEFINE_RT_MUTEX(rtmutex_D);
 
+#endif
+
+#ifdef CONFIG_SRCU
+static struct srcu_struct srcu_A;
+static struct srcu_struct srcu_B;
 #endif
 
 /*
@@ -177,6 +183,11 @@ static void init_shared_classes(void)
 	__rt_mutex_init(&rtmutex_Y2, __func__, &rt_Y);
 	__rt_mutex_init(&rtmutex_Z1, __func__, &rt_Z);
 	__rt_mutex_init(&rtmutex_Z2, __func__, &rt_Z);
+#endif
+
+#ifdef CONFIG_SRCU
+	init_srcu_struct(&srcu_A);
+	init_srcu_struct(&srcu_B);
 #endif
 
 	init_class_X(&lock_X1, &rwlock_X1, &mutex_X1, &rwsem_X1);
@@ -2360,6 +2371,58 @@ static void ww_tests(void)
 	pr_cont("\n");
 }
 
+static void srcu_ABBA(void)
+{
+	int ia, ib;
+
+	ia = srcu_read_lock(&srcu_A);
+	synchronize_srcu(&srcu_B);
+	srcu_read_unlock(&srcu_A);
+
+	ib = srcu_read_lock(&srcu_B);
+	synchronize_srcu(&srcu_A);
+	srcu_read_unlock(&srcu_B, ib); // should fail
+}
+
+static void srcu_mutex_ABBA(void)
+{
+	int ia;
+
+	mutex_lock(&mutex_A);
+	synchronize_srcu(&srcu_B);
+	mutex_unlock(&mutex_A);
+
+	ia = srcu_read_lock(&srcu_A);
+	mutex_lock(&mutex_A);
+	mutex_unlock(&mutex_A);
+	srcu_read_unlock(&srcu_A); // should fail
+}
+
+static void srcu_irqsafe(void)
+{
+	int ia;
+
+	HARDIRQ_ENTER();
+	ia = srcu_read_lock(&srcu_A);
+	srcu_read_unlock(&srcu_A);
+	HARDIRQ_EXIT();
+
+	synchronize_srcu(&srcu_B); // should NOT fail
+}
+
+static void srcu_tests(void)
+{
+	printk("  --------------------------------------------------------------------------\n");
+	printk("  | SRCU tests |\n");
+	printk("  ---------------\n");
+	print_testname("ABBA read-sync/read-sync");
+	dotest(srcu_ABBA, FAILURE, LOCKTYPE_SRCU);
+	print_testname("ABBA mutex-sync/read-mutex");
+	dotest(srcu_mutex_ABBA, FAILURE, LOCKTYPE_SRCU);
+	print_testname("Irqsafe synchronize_srcu");
+	dotest(srcu_mutex_irqsafe, SUCCESS, LOCKTYPE_SRCU);
+	pr_cont("\n");
+}
 
 /*
  * <in hardirq handler>
@@ -2965,6 +3028,7 @@ void locking_selftest(void)
 	DO_TESTCASE_6x2x2RW("irq read-recursion #3", irq_read_recursion3);
 
 	ww_tests();
+	srcu_tests();
 
 	force_read_lock_recursive = 0;
 	/*
