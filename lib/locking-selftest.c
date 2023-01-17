@@ -102,8 +102,6 @@ static DEFINE_RT_MUTEX(rtmutex_D);
 #endif
 
 #ifdef CONFIG_SRCU
-static struct lock_class_key srcu_A_key;
-static struct lock_class_key srcu_B_key;
 static struct srcu_struct srcu_A;
 static struct srcu_struct srcu_B;
 #endif
@@ -1413,6 +1411,11 @@ static void reset_locks(void)
 	I_RAW_SPINLOCK(A); I_RAW_SPINLOCK(B);
 	I_LOCAL_LOCK(A);
 
+#ifdef CONFIG_SRCU
+	lockdep_reset_lock(&srcu_A.dep_map);
+	lockdep_reset_lock(&srcu_B.dep_map);
+#endif
+
 	lockdep_reset();
 
 	I2(A); I2(B); I2(C); I2(D);
@@ -1427,11 +1430,8 @@ static void reset_locks(void)
 	memset(&ww_lockdep.mutex_key, 0, sizeof(ww_lockdep.mutex_key));
 	local_irq_enable();
 
-#ifdef CONFIG_SRCU
-	__init_srcu_struct(&srcu_A, "srcuA", &srcu_A_key);
-	__init_srcu_struct(&srcu_B, "srcuB", &srcu_B_key);
-#endif
-
+	init_srcu_struct(&srcu_A);
+	init_srcu_struct(&srcu_B);
 }
 
 #undef I
@@ -2401,6 +2401,21 @@ static void srcu_mutex_ABBA(void)
 	srcu_read_unlock(&srcu_A, ia); // should fail
 }
 
+static void srcu_mutex_ABBA2(void)
+{
+	int ia;
+
+	ia = srcu_read_lock(&srcu_A);
+	mutex_lock(&mutex_A);
+	mutex_unlock(&mutex_A);
+	srcu_read_unlock(&srcu_A, ia);
+
+	mutex_lock(&mutex_A);
+	synchronize_srcu(&srcu_A);
+	mutex_unlock(&mutex_A); // should fail
+
+}
+
 static void srcu_irqsafe(void)
 {
 	int ia;
@@ -2422,6 +2437,8 @@ static void srcu_tests(void)
 	dotest(srcu_ABBA, FAILURE, LOCKTYPE_SRCU);
 	print_testname("ABBA mutex-sync/read-mutex");
 	dotest(srcu_mutex_ABBA, FAILURE, LOCKTYPE_SRCU);
+	print_testname("ABBA mutex-sync/read-mutex2");
+	dotest(srcu_mutex_ABBA2, FAILURE, LOCKTYPE_SRCU);
 	print_testname("Irqsafe synchronize_srcu");
 	dotest(srcu_irqsafe, SUCCESS, LOCKTYPE_SRCU);
 	pr_cont("\n");
@@ -2948,8 +2965,8 @@ void locking_selftest(void)
 
 	init_shared_classes();
 #ifdef CONFIG_SRCU
-	__init_srcu_struct(&srcu_A, "srcuA", &srcu_A_key);
-	__init_srcu_struct(&srcu_B, "srcuB", &srcu_B_key);
+	init_srcu_struct(&srcu_A);
+	init_srcu_struct(&srcu_B);
 #endif
 	lockdep_set_selftest_task(current);
 

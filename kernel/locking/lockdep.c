@@ -1875,13 +1875,15 @@ print_circular_bug_entry(struct lock_list *target, int depth)
 static void
 print_circular_lock_scenario(struct held_lock *src,
 			     struct held_lock *tgt,
-			     struct lock_list *prt)
+			     struct lock_list *tail)
 {
 	struct lock_class *source = hlock_class(src);
 	struct lock_class *target = hlock_class(tgt);
-	struct lock_class *parent = prt->class;
-	int src_read = src->read;
-	int tgt_read = tgt->read;
+	struct lock_class *c = target;
+	int read = tgt->read != 0;
+	int recursive = src->read == 2;
+	struct lock_list *p = tail;
+	int depth = get_lock_depth(tail);
 
 	/*
 	 * A direct locking problem where unsafe_class lock is taken
@@ -1896,32 +1898,112 @@ print_circular_lock_scenario(struct held_lock *src,
 	 * to show a different CPU case for each link in the chain
 	 * from the safe_class lock to the unsafe_class lock.
 	 */
-	if (parent != source) {
+	if (depth > 1) {
 		printk("Chain exists of:\n  ");
-		__print_lock_name(source);
-		printk(KERN_CONT " --> ");
-		__print_lock_name(parent);
-		printk(KERN_CONT " --> ");
 		__print_lock_name(target);
+
+		while ((p = get_lock_parent(p))) {
+			printk(KERN_CONT "<-");
+			__print_lock_name(p->class);
+		}
+
 		printk(KERN_CONT "\n\n");
 	}
 
 	printk(" Possible unsafe locking scenario:\n\n");
-	printk("       CPU0                    CPU1\n");
-	printk("       ----                    ----\n");
-	if (tgt_read != 0)
+
+	for (int i = 0; i <= depth; i++) {
+		printk(KERN_CONT "    CPU%d", i);
+	}
+	printk(KERN_CONT "\n");
+
+	for (int i = 0; i <= depth; i++) {
+		printk(KERN_CONT "    ----");
+	}
+	printk(KERN_CONT "\n");
+
+	// First locks
+	p = tail;
+	for (int i = 0; i < depth; i++) {
+		printk("    ");
+		for (int j = 0; j < i; j++) {
+			printk(KERN_CONT "        ");
+		}
+		if (read)
+			printk(KERN_CONT "rlock(");
+		else
+			printk(KERN_CONT "lock(");
+		__print_lock_name(c);
+		printk(KERN_CONT ");\n");
+
+		if (p->only_xr) {
+			/* if p -> c has an ER, use it */
+			read = !(p->dep & DEP_ER_MASK);
+		} else {
+			/* if p -> c has an E*, use it */
+			read = read ? !(p->dep & DEP_EN_MASK) : !(p->dep & (DEP_ER_MASK | DEP_EN_MASK));
+		}
+		p = get_lock_parent(p);
+		c = p->class;
+	}
+
+	printk("    ");
+	for (int j = 0; j < depth; j++) {
+		printk(KERN_CONT "        ");
+	}
+	if (read)
+		printk(KERN_CONT "rlock(");
+	else
+		printk(KERN_CONT "lock(");
+	__print_lock_name(source);
+	printk(KERN_CONT ");\n");
+
+	// Second locks
+	c = source;
+	p = tail;
+	for (int i = 0; i < depth; i++) {
+		printk("    ");
+		for (int j = 0; j < i; j++) {
+			printk(KERN_CONT "        ");
+		}
+		if (recursive)
+			printk(KERN_CONT "unfair_rlock(");
+		else
+			printk(KERN_CONT "lock(");
+		__print_lock_name(c);
+		printk(KERN_CONT ");\n");
+
+		recursive = p->only_xr;
+		c = p->class;
+		p = get_lock_parent(p);
+	}
+
+	printk("    ");
+	for (int j = 0; j < depth; j++) {
+		printk(KERN_CONT "        ");
+	}
+	if (recursive)
+		printk(KERN_CONT "unfair_rlock(");
+	else
+		printk(KERN_CONT "lock(");
+	__print_lock_name(c);
+	printk(KERN_CONT ");\n");
+
+
+	/*
+	if (tgt->read != 0)
 		printk("  rlock(");
 	else
 		printk("  lock(");
 	__print_lock_name(target);
 	printk(KERN_CONT ");\n");
 	printk("                               lock(");
-	__print_lock_name(parent);
+	__print_lock_name(p->class);
 	printk(KERN_CONT ");\n");
 	printk("                               lock(");
 	__print_lock_name(target);
 	printk(KERN_CONT ");\n");
-	if (src_read != 0)
+	if (src->read != 0)
 		printk("  rlock(");
 	else if (src->sync)
 		printk("  sync(");
@@ -1929,6 +2011,7 @@ print_circular_lock_scenario(struct held_lock *src,
 		printk("  lock(");
 	__print_lock_name(source);
 	printk(KERN_CONT ");\n");
+	*/
 	printk("\n *** DEADLOCK ***\n\n");
 }
 
@@ -2056,8 +2139,7 @@ static noinline void print_circular_bug(struct lock_list *this,
 	}
 
 	printk("\nother info that might help us debug this:\n\n");
-	print_circular_lock_scenario(check_src, check_tgt,
-				     first_parent);
+	print_circular_lock_scenario(check_src, check_tgt, target);
 
 	lockdep_print_held_locks(curr);
 
