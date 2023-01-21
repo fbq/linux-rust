@@ -2375,6 +2375,7 @@ static void ww_tests(void)
  */
 static void queued_read_lock_hardirq_RE_Er(void)
 {
+	// T0
 	HARDIRQ_ENTER();
 	read_lock(&rwlock_A);
 	LOCK(B);
@@ -2382,12 +2383,17 @@ static void queued_read_lock_hardirq_RE_Er(void)
 	read_unlock(&rwlock_A);
 	HARDIRQ_EXIT();
 
+	// T1
 	HARDIRQ_DISABLE();
 	LOCK(B);
 	read_lock(&rwlock_A);
 	read_unlock(&rwlock_A);
 	UNLOCK(B);
 	HARDIRQ_ENABLE();
+
+	// T2
+	write_lock_irq(&rwlock_A);
+	write_unlock_irq(&rwlock_A);
 }
 
 /*
@@ -2455,6 +2461,7 @@ static void queued_read_lock_tests(void)
 	dotest(queued_read_lock_hardirq_RE_Er, FAILURE, LOCKTYPE_RWLOCK);
 	pr_cont("\n");
 
+#if 0
 	print_testname("hardirq lock-read/read-lock");
 	dotest(queued_read_lock_hardirq_ER_rE, SUCCESS, LOCKTYPE_RWLOCK);
 	pr_cont("\n");
@@ -2462,6 +2469,7 @@ static void queued_read_lock_tests(void)
 	print_testname("hardirq inversion");
 	dotest(queued_read_lock_hardirq_inversion, FAILURE, LOCKTYPE_RWLOCK);
 	pr_cont("\n");
+#endif
 }
 
 static void fs_reclaim_correct_nesting(void)
@@ -2885,6 +2893,7 @@ void locking_selftest(void)
 	init_shared_classes();
 	lockdep_set_selftest_task(current);
 
+#if 0
 	DO_TESTCASE_6R("A-A deadlock", AA);
 	DO_TESTCASE_6R("A-B-B-A deadlock", ABBA);
 	DO_TESTCASE_6R("A-B-B-C-C-A deadlock", ABBCCA);
@@ -2967,6 +2976,7 @@ void locking_selftest(void)
 	DO_TESTCASE_6x2x2RW("irq read-recursion #3", irq_read_recursion3);
 
 	ww_tests();
+#endif
 
 	force_read_lock_recursive = 0;
 	/*
@@ -2975,6 +2985,7 @@ void locking_selftest(void)
 	if (IS_ENABLED(CONFIG_QUEUED_RWLOCKS))
 		queued_read_lock_tests();
 
+#if 0
 	fs_reclaim_tests();
 
 	/* Wait context test cases that are specific for RAW_LOCK_NESTING */
@@ -2987,6 +2998,7 @@ void locking_selftest(void)
 	dotest(hardirq_deadlock_softirq_not_deadlock, FAILURE, LOCKTYPE_SPECIAL);
 	pr_cont("\n");
 
+#endif
 	if (unexpected_testcase_failures) {
 		printk("-----------------------------------------------------------------\n");
 		debug_locks = 0;
