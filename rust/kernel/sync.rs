@@ -6,5 +6,7 @@
 //! wrapped for usage by Rust code in the kernel.
 
 mod arc;
+mod lock;
 
 pub use arc::{Arc, ArcBorrow, UniqueArc};
+pub use lock::LockClassKey;
