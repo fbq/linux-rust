@@ -2,7 +2,7 @@
 
 //! Async networking.
 
-use crate::{bindings, error::code::*, net, sync::NoWaitLock, types::Opaque, Result};
+use crate::{bindings, error::code::*, net, kasync::waker::AtomicWaker, types::Opaque, Result};
 use core::{
     future::Future,
     marker::{PhantomData, PhantomPinned},
@@ -137,7 +137,7 @@ struct SocketFuture<'a, Out, F: FnMut() -> Result<Out> + Send + 'a> {
     mask: u32,
     is_queued: bool,
     wq_entry: Opaque<bindings::wait_queue_entry>,
-    waker: NoWaitLock<Option<Waker>>,
+    waker: AtomicWaker,
     _p: PhantomData<&'a ()>,
     _pin: PhantomPinned,
     operation: F,
@@ -160,7 +160,7 @@ impl<'a, Out, F: FnMut() -> Result<Out> + Send + 'a> SocketFuture<'a, Out, F> {
             mask,
             is_queued: false,
             wq_entry: Opaque::uninit(),
-            waker: NoWaitLock::new(None),
+            waker: AtomicWaker::new(),
             operation,
             _p: PhantomData,
             _pin: PhantomPinned,
@@ -210,13 +210,9 @@ impl<'a, Out, F: FnMut() -> Result<Out> + Send + 'a> SocketFuture<'a, Out, F> {
         // If we can't acquire the waker lock, the waker is in the process of being modified. Our
         // attempt to acquire the lock will be reported to the lock owner, so it will trigger the
         // wake up.
-        if let Some(guard) = s.waker.try_lock() {
-            if let Some(ref w) = *guard {
-                let cloned = w.clone();
-                drop(guard);
-                cloned.wake();
-                return 1;
-            }
+        if let Some(w) = s.waker.take() {
+            w.wake();
+            return 1;
         }
         0
     }
@@ -243,19 +239,12 @@ impl<'a, Out, F: FnMut() -> Result<Out> + Send + 'a> SocketFuture<'a, Out, F> {
     ///
     /// It automatically triggers a wake up on races with the reactor.
     fn set_waker(&self, waker: &Waker) {
-        if let Some(mut guard) = self.waker.try_lock() {
-            let old = core::mem::replace(&mut *guard, Some(waker.clone()));
-            let contention = guard.unlock();
-            drop(old);
-            if !contention {
-                return;
-            }
+        if self.waker.register(waker) {
+            // We either couldn't store the waker because the existing one is being awakened, or the
+            // reactor tried to acquire the lock while we held it (contention). In either case, we just
+            // wake it up to ensure we don't miss any notification.
+            waker.wake_by_ref();
         }
-
-        // We either couldn't store the waker because the existing one is being awakened, or the
-        // reactor tried to acquire the lock while we held it (contention). In either case, we just
-        // wake it up to ensure we don't miss any notification.
-        waker.wake_by_ref();
     }
 }
 
