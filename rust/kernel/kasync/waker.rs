@@ -78,6 +78,11 @@ impl AtomicWaker {
         if old != KEY.registering && old != KEY.taking {
             let waker = waker.clone();
             // We win the race
+            if old != KEY.taken {
+                // We have a old waker, need to drop it.
+                unsafe { Waker::from_raw(RawWaker::new(old, *self.table.get())) };
+            }
+
             unsafe { *self.table.get() = waker.as_raw().vtable(); }
 
             // Release the lock and set the Waker
