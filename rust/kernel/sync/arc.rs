@@ -255,6 +255,17 @@ impl<T: ?Sized> Drop for Arc<T> {
         // SAFETY: Also by the type invariant, we are allowed to decrement the refcount.
         let is_zero = unsafe { bindings::refcount_dec_and_test(refcount) };
         if is_zero {
+            let _type_name = core::any::type_name::<T>();
+
+            // SAFETY: `type_name` is `'static` and `self` is passed to only use as a pointer value.
+            #[cfg(CONFIG_TRACEPOINTS)] // Avoid function calls if tracepoints are not enabled.
+            unsafe {
+                bindings::trace_arc_drop_inner(
+                    _type_name.as_ptr() as _,
+                    _type_name.len() as _,
+                    self as *mut _ as *const _
+                );
+            }
             // The count reached zero, we must free the memory.
             //
             // SAFETY: The pointer was initialised from the result of `Box::leak`.

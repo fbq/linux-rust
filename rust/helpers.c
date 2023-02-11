@@ -22,6 +22,9 @@
 #include <linux/build_bug.h>
 #include <linux/refcount.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/rust.h>
+
 __noreturn void rust_helper_BUG(void)
 {
 	BUG();
@@ -45,6 +48,14 @@ bool rust_helper_refcount_dec_and_test(refcount_t *r)
 	return refcount_dec_and_test(r);
 }
 EXPORT_SYMBOL_GPL(rust_helper_refcount_dec_and_test);
+
+void rust_helper_trace_arc_drop_inner(const char *name,
+				      unsigned long name_len,
+				      const void *ptr)
+{
+	trace_arc_drop_inner(name, name_len, ptr);
+}
+EXPORT_SYMBOL_GPL(rust_helper_trace_arc_drop_inner);
 
 /*
  * We use `bindgen`'s `--size_t-is-usize` option to bind the C `size_t` type
