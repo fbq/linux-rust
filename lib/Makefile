@@ -142,6 +142,9 @@ obj-$(CONFIG_GENERIC_PCI_IOMAP) += pci_iomap.o
 obj-$(CONFIG_HAS_IOMEM) += iomap_copy.o devres.o
 obj-$(CONFIG_CHECK_SIGNATURE) += check_signature.o
 obj-$(CONFIG_DEBUG_LOCKING_API_SELFTESTS) += locking-selftest.o
+ifdef CONFIG_RUST
+obj-$(CONFIG_DEBUG_LOCKING_API_SELFTESTS) += rust_locking_selftest.o
+endif
 
 lib-y += logic_pio.o
 

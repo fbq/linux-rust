@@ -2854,6 +2854,11 @@ static void hardirq_deadlock_softirq_not_deadlock(void)
 	HARDIRQ_ENABLE();
 }
 
+#ifdef CONFIG_RUST
+void rust_locking_test(void);
+#else
+#define rust_locking_test()
+#endif
 void locking_selftest(void)
 {
 	/*
@@ -3010,6 +3015,10 @@ void locking_selftest(void)
 		printk("---------------------------------\n");
 		debug_locks = 1;
 	}
+
+	/* Rust locking API tests */
+	rust_locking_test();
+
 	lockdep_set_selftest_task(NULL);
 	debug_locks_silent = 0;
 }
