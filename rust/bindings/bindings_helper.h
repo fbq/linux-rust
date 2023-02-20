@@ -6,6 +6,7 @@
  * Sorted alphabetically.
  */
 
+#include <linux/kthread.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/refcount.h>
