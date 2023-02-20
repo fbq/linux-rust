@@ -21,6 +21,7 @@
 #include <linux/bug.h>
 #include <linux/build_bug.h>
 #include <linux/refcount.h>
+#include <linux/slab.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/rust.h>
@@ -56,6 +57,12 @@ void rust_helper_trace_arc_drop_inner(const char *name,
 	trace_arc_drop_inner(name, name_len, ptr);
 }
 EXPORT_SYMBOL_GPL(rust_helper_trace_arc_drop_inner);
+
+unsigned long rust_helper_arch_slab_minalign(void)
+{
+	return arch_slab_minalign();
+}
+EXPORT_SYMBOL_GPL(rust_helper_arch_slab_minalign);
 
 /*
  * We use `bindgen`'s `--size_t-is-usize` option to bind the C `size_t` type

@@ -25,6 +25,17 @@ impl kernel::Module for RustMinimal {
         numbers.try_push(72)?;
         numbers.try_push(108)?;
         numbers.try_push(200)?;
+        #[repr(align(64))]
+        struct A16 {
+            a: [u8; 4160]
+        }
+
+        for _ in 0..100 {
+            let a = Box::try_new(A16 { a: [0;4160]})?;
+            pr_info!("{}", a.a[0]);
+
+            assert!(Box::leak(a) as *mut _ as usize & (64 - 1) == 0);
+        }
 
         Ok(RustMinimal { numbers })
     }
