@@ -68,7 +68,7 @@ pub mod code {
 /// # Invariants
 ///
 /// The value is a valid `errno` (i.e. `>= -MAX_ERRNO && < 0`).
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Error(core::ffi::c_int);
 
 impl Error {
