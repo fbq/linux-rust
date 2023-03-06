@@ -240,6 +240,18 @@ impl<T> Opaque<T> {
     pub fn get(&self) -> *mut T {
         UnsafeCell::raw_get(self.0.as_ptr())
     }
+
+    /// Gets the value behind `this`.
+    ///
+    /// This function is useful to get access to the value without creating intermeditate
+    /// references.
+    ///
+    /// # Safety
+    ///
+    /// The pointer supplied is valid.
+    pub unsafe fn raw_get(this: *const Self) -> *mut T {
+        UnsafeCell::raw_get(this.cast::<UnsafeCell<T>>())
+    }
 }
 
 /// A sum type that always holds either a value of type `L` or `R`.

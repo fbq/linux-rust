@@ -20,17 +20,24 @@
 #![feature(new_uninit)]
 #![feature(receiver_trait)]
 #![feature(unsize)]
+#![feature(new_uninit)]
+#![feature(explicit_generic_args_with_impl_trait)]
 
 // Ensure conditional compilation based on the kernel configuration works;
 // otherwise we may silently break things like initcall handling.
 #[cfg(not(CONFIG_RUST))]
 compile_error!("Missing kernel configuration for conditional compilation");
 
+#[allow(unused_extern_crates)]
+// allow proc-macros to refer to `::kernel` inside the kernel crate.
+extern crate self as kernel;
+
 #[cfg(not(test))]
 #[cfg(not(testlib))]
 mod allocator;
 mod build_assert;
 pub mod error;
+pub mod init;
 pub mod prelude;
 pub mod print;
 mod static_assert;

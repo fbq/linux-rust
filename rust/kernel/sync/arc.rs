@@ -17,7 +17,8 @@
 
 use crate::{
     bindings,
-    error::Result,
+    error::{Error, Result},
+    init::{InPlaceInit, Init, PinInit},
     types::{ForeignOwnable, Opaque},
 };
 use alloc::boxed::Box;
@@ -164,6 +165,28 @@ impl<T> Arc<T> {
         // SAFETY: We just created `inner` with a reference count of 1, which is owned by the new
         // `Arc` object.
         Ok(unsafe { Self::from_inner(Box::leak(inner).into()) })
+    }
+
+    /// Use the given initializer to in-place initialize a `T`.
+    ///
+    /// If `T: !Unpin` it will not be able to move afterwards.
+    #[inline]
+    pub fn pin_init<E>(init: impl PinInit<T, E>) -> Result<Self>
+    where
+        Error: From<E>,
+    {
+        UniqueArc::pin_init(init).map(|u| u.into())
+    }
+
+    /// Use the given initializer to in-place initialize a `T`.
+    ///
+    /// This is equivalent to [`pin_init`], since an `Arc` is always pinned.
+    #[inline]
+    pub fn init<E>(init: impl Init<T, E>) -> Result<Self>
+    where
+        Error: From<E>,
+    {
+        UniqueArc::init(init).map(|u| u.into())
     }
 }
 
@@ -523,14 +546,16 @@ impl<T> UniqueArc<MaybeUninit<T>> {
     /// Converts a `UniqueArc<MaybeUninit<T>>` into a `UniqueArc<T>` by writing a value into it.
     pub fn write(mut self, value: T) -> UniqueArc<T> {
         self.deref_mut().write(value);
-        // SAFETY: We have just written the contents fully.
+        // SAFETY: we just wrote the value to be initialized.
         unsafe { self.assume_init() }
     }
 
-    /// Returns a UniqueArc<T>, assuming the MaybeUninit<T> has already been initialized.
+    /// Unsafely assume that `self` is initialized.
     ///
     /// # Safety
-    /// The contents of the UniqueArc must have already been fully initialized.
+    ///
+    /// The caller guarantees that the value behind this pointer has been initialized. It is
+    /// *immediate* UB to call this when the value is not initialized.
     pub unsafe fn assume_init(self) -> UniqueArc<T> {
         let inner = ManuallyDrop::new(self).inner.ptr;
         UniqueArc {
