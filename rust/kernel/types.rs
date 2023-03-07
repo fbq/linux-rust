@@ -243,13 +243,9 @@ impl<T> Opaque<T> {
 
     /// Gets the value behind `this`.
     ///
-    /// This function is useful to get access to the value without creating intermeditate
+    /// This function is useful to get access to the value without creating intermediate
     /// references.
-    ///
-    /// # Safety
-    ///
-    /// The pointer supplied is valid.
-    pub unsafe fn raw_get(this: *const Self) -> *mut T {
+    pub const fn raw_get(this: *const Self) -> *mut T {
         UnsafeCell::raw_get(this.cast::<UnsafeCell<T>>())
     }
 }

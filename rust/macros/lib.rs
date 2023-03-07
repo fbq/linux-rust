@@ -169,7 +169,7 @@ pub fn concat_idents(ts: TokenStream) -> TokenStream {
     concat_idents::concat_idents(ts)
 }
 
-/// Used to specify the pin information of the fields of a struct.
+/// Used to specify the pinning information of the fields of a struct.
 ///
 /// This is somewhat similar in purpose as
 /// [pin-project-lite](https://crates.io/crates/pin-project-lite).

@@ -5,9 +5,9 @@ use proc_macro::{Delimiter, Group, Ident, Punct, Spacing, Span, TokenStream, Tok
 pub(crate) fn pinned_drop(_args: TokenStream, input: TokenStream) -> TokenStream {
     let mut toks = input.into_iter().collect::<Vec<_>>();
     assert!(!toks.is_empty());
-    // ensure that we have an impl item
+    // Ensure that we have an impl item.
     assert!(matches!(&toks[0], TokenTree::Ident(i) if i.to_string() == "impl"));
-    // ensure that we are implementing `PinnedDrop`
+    // Ensure that we are implementing `PinnedDrop`:
     let mut nesting: usize = 0;
     let mut pinned_drop_idx = None;
     for (i, tt) in toks.iter().enumerate() {
@@ -22,6 +22,7 @@ pub(crate) fn pinned_drop(_args: TokenStream, input: TokenStream) -> TokenStream
             _ => {}
         }
         if i >= 1 && nesting == 0 {
+            // found the end of the generics, this should be `PinnedDrop`:
             assert!(
                 matches!(tt, TokenTree::Ident(i) if i.to_string() == "PinnedDrop"),
                 "expected 'PinnedDrop', found: '{:?}'",
@@ -33,9 +34,9 @@ pub(crate) fn pinned_drop(_args: TokenStream, input: TokenStream) -> TokenStream
     }
     let idx = pinned_drop_idx
         .unwrap_or_else(|| panic!("Expected an `impl` block implementing `PinnedDrop`."));
-    // fully qualify the `PinnedDrop`, as to avoid any tampering.
+    // Fully qualify the `PinnedDrop`, as to avoid any tampering.
     toks.splice(idx..idx, "::kernel::init::".parse::<TokenStream>().unwrap());
-    // take the {} body. and call the declarative macro.
+    // Take the `{}` body and call the declarative macro.
     if let Some(TokenTree::Group(last)) = toks.pop() {
         TokenStream::from_iter(vec![
             TokenTree::Punct(Punct::new(':', Spacing::Joint)),
@@ -43,7 +44,7 @@ pub(crate) fn pinned_drop(_args: TokenStream, input: TokenStream) -> TokenStream
             TokenTree::Ident(Ident::new("kernel", Span::call_site())),
             TokenTree::Punct(Punct::new(':', Spacing::Joint)),
             TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-            TokenTree::Ident(Ident::new("pinned_drop", Span::call_site())),
+            TokenTree::Ident(Ident::new("__pinned_drop", Span::call_site())),
             TokenTree::Punct(Punct::new('!', Spacing::Alone)),
             TokenTree::Group(Group::new(
                 Delimiter::Brace,

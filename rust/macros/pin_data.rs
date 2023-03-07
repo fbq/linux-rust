@@ -9,13 +9,13 @@ pub(crate) fn pin_data(args: TokenStream, input: TokenStream) -> TokenStream {
     // In here we only collect the generics, since parsing them in declarative macros is very
     // elaborate. We also do not need to analyse their structure, we only need to collect them.
 
-    // impl_generics, the declared generics with their bounds
+    // `impl_generics`, the declared generics with their bounds.
     let mut impl_generics = vec![];
-    // only the names of the generics, without any bounds
+    // Only the names of the generics, without any bounds.
     let mut ty_generics = vec![];
-    // tokens not related to the generics e.g. the `impl` token
+    // Tokens not related to the generics e.g. the `impl` token.
     let mut rest = vec![];
-    // the current level of `<`
+    // The current level of `<`.
     let mut nesting = 0;
     let mut toks = input.into_iter();
     // if we are at the beginning of a generic parameter
@@ -66,10 +66,10 @@ pub(crate) fn pin_data(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     }
     rest.extend(toks);
-    // this should be the body of the struct '{...}'
+    // This should be the body of the struct `{...}`.
     let last = rest.pop();
     let mut ret = vec![];
-    ret.extend("::kernel::_pin_data!".parse::<TokenStream>().unwrap());
+    ret.extend("::kernel::__pin_data!".parse::<TokenStream>().unwrap());
     ret.push(TokenTree::Group(Group::new(
         Delimiter::Brace,
         TokenStream::from_iter(vec![
