@@ -870,8 +870,6 @@ macro_rules! try_init {
 ///     - slot is not partially initialized.
 /// - while constructing the `T` at `slot` it upholds the pinning invariants of `T`.
 ///
-/// Note: some of these obligations are lifted if this is actually an [`Init<T, E>`].
-///
 /// [`Arc<T>`]: crate::sync::Arc
 /// [`Arc::pin_init`]: crate::sync::Arc::pin_init
 #[must_use = "An initializer must be used in order to create its value."]
@@ -880,10 +878,10 @@ pub unsafe trait PinInit<T: ?Sized, E = Infallible>: Sized {
     ///
     /// # Safety
     ///
-    /// `slot` is a valid pointer to uninitialized memory.
-    /// The caller does not touch `slot` when `Err` is returned, they are only permitted to
-    /// deallocate.
-    /// The slot will not move, i.e. it will be pinned.
+    /// - `slot` is a valid pointer to uninitialized memory.
+    /// - the caller does not touch `slot` when `Err` is returned, they are only permitted to
+    ///   deallocate.
+    /// - the slot will not move until it is dropped, i.e. it will be pinned.
     unsafe fn __pinned_init(self, slot: *mut T) -> Result<(), E>;
 }
 
@@ -908,14 +906,13 @@ pub unsafe trait PinInit<T: ?Sized, E = Infallible>: Sized {
 ///     - slot can be deallocated without UB occurring,
 ///     - slot does not need to be dropped,
 ///     - slot is not partially initialized.
+/// - while constructing the `T` at `slot` it upholds the pinning invariants of `T`.
 ///
 /// The `__pinned_init` function from the supertrait [`PinInit`] needs to execute the exact same
 /// code as `__init`.
 ///
 /// Contrary to its supertype [`PinInit<T, E>`] the caller is allowed to
-/// move the pointee after initialization. It also is allowed to break the pinning invariants of
-/// `T` while constructing it.
-///
+/// move the pointee after initialization.
 /// [`Arc<T>`]: crate::sync::Arc
 #[must_use = "An initializer must be used in order to create its value."]
 pub unsafe trait Init<T: ?Sized, E = Infallible>: PinInit<T, E> {
@@ -923,9 +920,9 @@ pub unsafe trait Init<T: ?Sized, E = Infallible>: PinInit<T, E> {
     ///
     /// # Safety
     ///
-    /// `slot` is a valid pointer to uninitialized memory.
-    /// The caller does not touch `slot` when `Err` is returned, they are only permitted to
-    /// deallocate.
+    /// - `slot` is a valid pointer to uninitialized memory.
+    /// - the caller does not touch `slot` when `Err` is returned, they are only permitted to
+    ///   deallocate.
     unsafe fn __init(self, slot: *mut T) -> Result<(), E>;
 }
 
@@ -969,7 +966,8 @@ where
 ///     - slot can be deallocated without UB occurring,
 ///     - slot does not need to be dropped,
 ///     - slot is not partially initialized.
-/// - may assume that the slot does not move if `T: !Unpin`.
+/// - may assume that the slot does not move if `T: !Unpin`,
+/// - while constructing the `T` at `slot` it upholds the pinning invariants of `T`.
 #[inline]
 pub const unsafe fn pin_init_from_closure<T, E>(
     f: impl FnOnce(*mut T) -> Result<(), E>,
@@ -987,7 +985,8 @@ pub const unsafe fn pin_init_from_closure<T, E>(
 ///     - slot can be deallocated without UB occurring,
 ///     - slot does not need to be dropped,
 ///     - slot is not partially initialized.
-/// - slot may move after initialization.
+/// - the slot may move after initialization.
+/// - while constructing the `T` at `slot` it upholds the pinning invariants of `T`.
 #[inline]
 pub const unsafe fn init_from_closure<T, E>(
     f: impl FnOnce(*mut T) -> Result<(), E>,
