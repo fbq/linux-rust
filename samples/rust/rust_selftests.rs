@@ -79,7 +79,7 @@ fn test_thread() -> Result<TestSummary> {
         jiffies_later,
         timer::{FnTimer, Next, Timeout},
     };
-    use kernel::{c_str, timer_init};
+    use kernel::{c_str, stack_init};
 
     // Tells whether the thread is already starting.
     let start = Arc::try_new(AtomicBool::new(false))?;
@@ -90,25 +90,30 @@ fn test_thread() -> Result<TestSummary> {
 
         let mut local = 0;
         let flag = AtomicBool::new(false);
-        let t = unsafe {
-            FnTimer::new(|| {
-                local += 1;
 
-                pr_info!("local is {local}");
+        static CLASS: kernel::sync::LockClassKey = kernel::sync::LockClassKey::new();
 
-                // Notifies the thread after 10 times
-                if local == 10 {
-                    flag.store(true, Ordering::Relaxed);
-                }
+        stack_init! {
+            let t = FnTimer::new(|| {
+                    local += 1;
 
-                Ok(Next::Again(1000))
-            })
-        };
+                    pr_info!("local is {local}");
 
-        let pt = unsafe { core::pin::Pin::new_unchecked(&t) };
+                    // Notifies the thread after 10 times
+                    if local == 10 {
+                        flag.store(true, Ordering::Relaxed);
+                    }
 
-        timer_init!(pt, 0, "rust timer");
-        pt.raw_timer().schedule_at(jiffies_later(0));
+                    Ok(Next::Again(1000))
+                },
+                0,
+                c_str!("rust tiemr"),
+                &CLASS)
+        }
+
+        let pt = t.unwrap();
+
+        pt.as_ref().raw_timer().schedule_at(jiffies_later(0));
 
         while !flag.load(Ordering::Relaxed) {
             kernel::thread::schedule();

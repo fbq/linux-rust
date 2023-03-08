@@ -7,7 +7,9 @@
 use core::{marker::PhantomPinned, pin::Pin};
 
 use crate::container_of;
-use crate::{bindings::timer_list, prelude::*, str::CStr, sync::LockClassKey, types::Opaque};
+use crate::{
+    bindings::timer_list, init::PinInit, prelude::*, str::CStr, sync::LockClassKey, types::Opaque,
+};
 
 use super::*;
 
@@ -44,13 +46,6 @@ pub unsafe trait Timeout: Sized {
 
     /// Gets the pinned reference to the inner [`RawTimer`].
     fn raw_timer(self: Pin<&Self>) -> Pin<&RawTimer>;
-
-    /// Initialises the [`RawTimer`] inside.
-    ///
-    /// XXX: this probably goes way with pin-init.
-    fn init_timer(self: Pin<&Self>, flags: u32, name: &'static CStr, key: &'static LockClassKey) {
-        self.raw_timer().init::<Self>(flags, name, key);
-    }
 }
 
 impl RawTimer {
@@ -59,10 +54,27 @@ impl RawTimer {
     /// # Safety
     ///
     /// The caller must call [`RawTimer::init`] before using the timer.
-    pub unsafe fn new() -> Self {
-        RawTimer {
-            opaque: Opaque::uninit(),
-            _p: PhantomPinned,
+    pub fn new<T: Timeout>(
+        flags: u32,
+        name: &'static CStr,
+        key: &'static LockClassKey,
+    ) -> impl PinInit<Self> {
+        unsafe {
+            init::pin_init_from_closure(move |slot: *mut Self| {
+                // SAFETY: pin-init guarantees we have a valid pointer here.
+                let opaque = &(*slot).opaque;
+
+                // SAFTEFY: `self.opaque.get()` is a valid pointer to a [`timer_list`], and
+                // `Self::bridge::<T>` is a safe function.
+                bindings::init_timer_key(
+                    opaque.get(),
+                    Some(Self::bridge::<T>),
+                    flags,
+                    name.as_char_ptr(),
+                    key.get(),
+                );
+                Ok(())
+            })
         }
     }
 
@@ -84,26 +96,6 @@ impl RawTimer {
                 todo!("need Error::name()");
             }
             _ => {}
-        }
-    }
-
-    /// Initialises a [`RawTimer`].
-    fn init<T: Timeout>(
-        self: Pin<&Self>,
-        flags: u32,
-        name: &'static CStr,
-        key: &'static LockClassKey,
-    ) {
-        // SAFTEFY: `self.opaque.get()` is a valid pointer to a [`timer_list`], and
-        // `Self::bridge::<T>` is a safe function.
-        unsafe {
-            bindings::init_timer_key(
-                self.opaque.get(),
-                Some(Self::bridge::<T>),
-                flags,
-                name.as_char_ptr(),
-                key.get(),
-            );
         }
     }
 
@@ -163,11 +155,13 @@ pub enum Next {
 }
 
 /// A simple closure timer.
+#[pin_data(PinnedDrop)]
 pub struct FnTimer<F>
 where
     F: Sync, // SYNC: `F` may be called on other CPU.
     F: FnMut() -> Result<Next>,
 {
+    #[pin]
     raw: RawTimer,
     f: F,
 }
@@ -182,12 +176,17 @@ where
     /// # Safety
     ///
     /// The caller must call [`FnTimer::init_timer`] before using the timer.
-    pub unsafe fn new(f: F) -> Self {
-        Self {
+    pub fn new(
+        f: F,
+        flags: u32,
+        name: &'static CStr,
+        key: &'static LockClassKey,
+    ) -> impl PinInit<Self> {
+        pin_init!(Self {
             // SAFTEFY: Guaranteed by safety requirement of [`FnTimer::new`].
-            raw: unsafe { RawTimer::new() },
+            raw <- RawTimer::new::<Self>(flags, name, key),
             f,
-        }
+        })
     }
 }
 
@@ -214,15 +213,13 @@ where
     }
 }
 
-impl<F> Drop for FnTimer<F>
+#[pinned_drop]
+impl<F> PinnedDrop for FnTimer<F>
 where
     F: Sync,
     F: FnMut() -> Result<Next>,
 {
-    fn drop(&mut self) {
-        // SAFETY: `self` is going to drop, no one will move `self`.
-        let pin = unsafe { Pin::new_unchecked(&*self) };
-
-        pin.raw_timer().shutdown();
+    fn drop(self: Pin<&mut Self>) {
+        self.as_ref().raw_timer().shutdown()
     }
 }
