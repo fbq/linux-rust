@@ -67,7 +67,7 @@ macro_rules! __pin_data {
         // order to declare the struct.
         //
         // In this call we also put some explaining comments for the parameters.
-        $crate::_pin_data!(find_pinned_fields:
+        $crate::__pin_data!(find_pinned_fields:
             // Attributes on the struct itself, these will just be propagated to be put onto the
             // struct definition.
             @struct_attrs($(#[$($struct_attr)*])*),
@@ -116,7 +116,7 @@ macro_rules! __pin_data {
         @is_pinned(yes),
         @pinned_drop($($pinned_drop:ident)?),
     ) => {
-        $crate::_pin_data!(find_pinned_fields:
+        $crate::__pin_data!(find_pinned_fields:
             @struct_attrs($($struct_attrs)*),
             @vis($vis),
             @name($name),
@@ -149,7 +149,7 @@ macro_rules! __pin_data {
         @is_pinned(),
         @pinned_drop($($pinned_drop:ident)?),
     ) => {
-        $crate::_pin_data!(find_pinned_fields:
+        $crate::__pin_data!(find_pinned_fields:
             @struct_attrs($($struct_attrs)*),
             @vis($vis),
             @name($name),
@@ -181,7 +181,7 @@ macro_rules! __pin_data {
         @is_pinned($($is_pinned:ident)?),
         @pinned_drop($($pinned_drop:ident)?),
     ) => {
-        $crate::_pin_data!(find_pinned_fields:
+        $crate::__pin_data!(find_pinned_fields:
             @struct_attrs($($struct_attrs)*),
             @vis($vis),
             @name($name),
@@ -217,7 +217,7 @@ macro_rules! __pin_data {
         @is_pinned($($is_pinned:ident)?),
         @pinned_drop($($pinned_drop:ident)?),
     ) => {
-        $crate::_pin_data!(find_pinned_fields:
+        $crate::__pin_data!(find_pinned_fields:
             @struct_attrs($($struct_attrs)*),
             @vis($vis),
             @name($name),
@@ -249,7 +249,7 @@ macro_rules! __pin_data {
         @is_pinned($($is_pinned:ident)?),
         @pinned_drop($($pinned_drop:ident)?),
     ) => {
-        $crate::_pin_data!(find_pinned_fields:
+        $crate::__pin_data!(find_pinned_fields:
             @struct_attrs($($struct_attrs)*),
             @vis($vis),
             @name($name),
@@ -305,7 +305,7 @@ macro_rules! __pin_data {
             }
 
             // Make all projection functions:
-            $crate::_pin_data!(make_pin_data:
+            $crate::__pin_data!(make_pin_data:
                 @pin_data(__ThePinData),
                 @impl_generics($($impl_generics)*),
                 @ty_generics($($ty_generics)*),
@@ -345,7 +345,7 @@ macro_rules! __pin_data {
 
             // We need to disallow normal `Drop` implementation, the exact behavior depends on
             // whether `PinnedDrop` was specified as the parameter.
-            $crate::_pin_data!(drop_prevention:
+            $crate::__pin_data!(drop_prevention:
                 @name($name),
                 @impl_generics($($impl_generics)*),
                 @ty_generics($($ty_generics)*),

@@ -868,6 +868,9 @@ macro_rules! try_init {
 ///     - slot can be deallocated without UB occurring,
 ///     - slot does not need to be dropped,
 ///     - slot is not partially initialized.
+/// - while constructing the `T` at `slot` it upholds the pinning invariants of `T`.
+///
+/// Note: some of these obligations are lifted if this is actually an [`Init<T, E>`].
 ///
 /// [`Arc<T>`]: crate::sync::Arc
 /// [`Arc::pin_init`]: crate::sync::Arc::pin_init
@@ -910,7 +913,8 @@ pub unsafe trait PinInit<T: ?Sized, E = Infallible>: Sized {
 /// code as `__init`.
 ///
 /// Contrary to its supertype [`PinInit<T, E>`] the caller is allowed to
-/// move the pointee after initialization.
+/// move the pointee after initialization. It also is allowed to break the pinning invariants of
+/// `T` while constructing it.
 ///
 /// [`Arc<T>`]: crate::sync::Arc
 #[must_use = "An initializer must be used in order to create its value."]
